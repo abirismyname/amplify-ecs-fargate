@@ -1,5 +1,17 @@
 # weather-ecs-fargate-react-app
 
+## Join the Event Engine
+
+To deploy this sample application on AWS, you first need an AWS account. For this purpose, we will use AWS provided Event Engine.
+
+* Go to: https://dashboard.eventengine.run/login
+* Use the **team-hash** provided by the mentor
+* Login using your email address
+* Use the **AWS Console** link to login to the AWS
+* Use the provided environment variables for AWS credentials and copy-paste it to your CodeSpaces
+
+Now you have your CodeSpaces linked with the temporary AWS account that you will use to deploy your application. 
+
 ## Bootstrap 
 
 **Prerequisites**:
