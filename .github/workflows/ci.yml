@@ -77,6 +77,7 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE
           git clone https://github.com/ProgramEquity/amplify app
+          cp $GITHUB_WORKSPACE/Dockerfile $GITHUB_WORKSPACE/app
           ls -l $GITHUB_WORKSPACE/app
 
 
