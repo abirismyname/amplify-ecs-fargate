@@ -1,0 +1,43 @@
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened]
+    branches: [main]
+
+name: build-and-deploy
+
+permissions:
+  contents: read
+  
+jobs:
+
+  build-and-test:
+    permissions:
+      id-token: write # need this for OIDC
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  deploy-to-prod:
+    needs: [build-and-test]
+    permissions:
+      id-token: write # need this for OIDC
+      contents: read
+    uses: ./.github/workflows/cd.yml
+    with:
+      image-tag: ${{ needs.build-and-test.outputs.image-tag }}
+    secrets: inherit
+
+  post-deploy:
+    needs: [build-and-test,deploy-to-prod]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps: 
+      - name: Post Deploy
+        env:
+          APP_URL: ${{ needs.deploy-to-prod.outputs.app_url }}
+          APP_IP: ${{ needs.deploy-to-prod.outputs.app_ip }}    
+        run: |
+          echo "APP_URL: [$APP_URL]($APP_URL)" >> $GITHUB_STEP_SUMMARY
+          echo "APP_IP: [$APP_IP]($APP_IP)" >> $GITHUB_STEP_SUMMARY

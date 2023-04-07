@@ -1,0 +1,99 @@
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      working-directory:
+        required: false
+        type: string
+        default: '.'
+      image-tag:
+        required: true
+        type: string
+    outputs:
+      app_url:
+        description: "The ECS application URL"
+        value: ${{ jobs.deploy.outputs.app_url }}
+      app_ip:
+        description: "The ECS application public ip"
+        value: ${{ jobs.deploy.outputs.app_ip }}
+name: cd
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.ref_name }}
+    outputs:
+      app_url: ${{ steps.set_app_url.outputs.app_url }}
+      app_ip:  ${{ steps.set_app_ip.outputs.app_ip }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ secrets.ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Deploy ECS Cluster
+        id: deploy-ecs-stack
+        uses: aws-actions/aws-cloudformation-github-deploy@master
+        with:
+          name: cluster
+          template: ./templates/cluster.yaml
+          no-fail-on-empty-changeset: "1"
+          parameter-overrides: >-
+            ECSClusterName=${{ vars.ECS_CLUSTER_NAME }},
+            AppName=${{ vars.APP_NAME }},
+            VPCStackName=${{ vars.VPC_STACK_NAME }}
+
+      - name: Get ECS env vars
+        id: get_ecs_ven_vars
+        run: |
+          ECS_CLUSTER=$(aws cloudformation describe-stacks --stack-name cluster --region ${{ vars.AWS_REGION }} | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="ECSCluster") | .OutputValue')
+          ECS_SERVICE=$(aws cloudformation describe-stacks --stack-name cluster --region ${{ vars.AWS_REGION }} | jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="ECSService") | .OutputValue')
+          echo "ECS_CLUSTER=$ECS_CLUSTER" >> $GITHUB_ENV
+          echo "ECS_SERVICE=$ECS_SERVICE" >> $GITHUB_ENV
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Download task definition
+        run: |
+          aws ecs describe-task-definition \
+           --task-definition ${{ vars.APP_NAME }}-task-definition-family \
+           --query taskDefinition > task-definition.json
+
+      - name: Fill in the new image ID in the Amazon ECS task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ vars.APP_NAME }}
+          image: "${{ steps.login-ecr.outputs.registry }}/${{ vars.ECR_REPO_NAME }}:${{ inputs.image-tag }}"
+
+      - name: Deploy Amazon ECS task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+      - name: Set App IP
+        id: set_app_ip
+        run: |
+          TASK_ARN=$(aws ecs list-tasks --cluster "${ECS_CLUSTER}" --service-name "${ECS_SERVICE}" --query 'taskArns[0]' --output text)
+          TASK_DETAILS=$(aws ecs describe-tasks --cluster "${ECS_CLUSTER}" --task "${TASK_ARN}" --query 'tasks[0].attachments[0].details')
+          ENI=$(echo $TASK_DETAILS | jq -r '.[] | select(.name=="networkInterfaceId").value')
+          PUBLIC_IP=$(aws ec2 describe-network-interfaces --network-interface-ids "${ENI}" --query 'NetworkInterfaces[0].Association.PublicIp' --output text)
+          echo "app_ip=$PUBLIC_IP" >> $GITHUB_OUTPUT
+
+      - name: Set App URL
+        id: set_app_url
+        run: |
+          TARGET_GROUP_ARN=$(aws ecs describe-services --service "${ECS_SERVICE}" --cluster "${ECS_CLUSTER}" --query 'services[0].loadBalancers[0].targetGroupArn' --output text)
+          LOAD_BALANCER_ARN=$(aws elbv2 describe-target-groups  --target-group-arns $TARGET_GROUP_ARN --query 'TargetGroups[0].LoadBalancerArns[0]' --output text)
+          APP_URL=$(aws elbv2 describe-load-balancers --load-balancer-arns $LOAD_BALANCER_ARN --query 'LoadBalancers[0].DNSName' --output text)
+          echo "app_url=$APP_URL" >> $GITHUB_OUTPUT

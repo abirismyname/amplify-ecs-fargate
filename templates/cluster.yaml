@@ -1,0 +1,251 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: ECS cluster infrastructure
+Parameters:
+  ECSClusterName:
+    Type: String
+    Description: Name of the ECS cluster
+  AppName:
+    Type: String
+    Description: Name of the application
+  VPCStackName:
+    Type: String
+    Description: VPCStackName - output value from the bootstrap stack 
+
+Resources:
+
+  PublicLoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Access to the public facing load balancer
+      VpcId: 
+        Fn::ImportValue:
+          !Sub "${VPCStackName}-VPCID"
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: -1
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: -1
+
+  PublicLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Subnets:
+        - Fn::ImportValue:
+            !Sub "${VPCStackName}-PublicSubnet1ID"
+        - Fn::ImportValue:
+            !Sub "${VPCStackName}-PublicSubnet2ID"
+        - Fn::ImportValue:
+            !Sub "${VPCStackName}-PublicSubnet3ID"
+      SecurityGroups: [!Ref 'PublicLoadBalancerSecurityGroup']
+
+  LoadBalancerTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: "/"
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      TargetType: ip
+      Name: !Ref AppName
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 2
+      VpcId: 
+        Fn::ImportValue:
+          !Sub "${VPCStackName}-VPCID"
+
+  LoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - TargetGroupArn: !Ref LoadBalancerTargetGroup
+          Type: forward
+      LoadBalancerArn: !Ref PublicLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  LoadBalancerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+        - TargetGroupArn: !Ref LoadBalancerTargetGroup
+          Type: forward
+      Conditions:
+        - Field: path-pattern
+          Values: 
+            - "/"
+      ListenerArn: !Ref LoadBalancerListener
+      Priority: 1
+
+  ECSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Access to the ECS containers
+      VpcId: 
+        Fn::ImportValue:
+          !Sub "${VPCStackName}-VPCID"
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: -1
+
+  ECSSecurityGroupIngressFromPublicALB:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Ingress from the public ALB
+      GroupId: !Ref ECSSecurityGroup
+      IpProtocol: -1
+      SourceSecurityGroupId: !Ref PublicLoadBalancerSecurityGroup
+
+  ECSSecurityGroupIngressFromSelf:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Ingress from other containers in the same security group
+      GroupId: !Ref ECSSecurityGroup
+      IpProtocol: -1
+      SourceSecurityGroupId: !Ref ECSSecurityGroup
+
+  ECSRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ecs.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Path: /
+      Policies:
+        - PolicyName: ecs-service
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action:
+                  # Rules which allow ECS to attach network interfaces to instances
+                  # on your behalf in order for awsvpc networking mode to work right
+                  - 'ec2:AttachNetworkInterface'
+                  - 'ec2:CreateNetworkInterface'
+                  - 'ec2:CreateNetworkInterfacePermission'
+                  - 'ec2:DeleteNetworkInterface'
+                  - 'ec2:DeleteNetworkInterfacePermission'
+                  - 'ec2:Describe*'
+                  - 'ec2:DetachNetworkInterface'
+                  # Rules which allow ECS to update load balancers on your behalf
+                  # with the information sabout how to send traffic to your containers
+                  - 'elasticloadbalancing:DeregisterInstancesFromLoadBalancer'
+                  - 'elasticloadbalancing:DeregisterTargets'
+                  - 'elasticloadbalancing:Describe*'
+                  - 'elasticloadbalancing:RegisterInstancesWithLoadBalancer'
+                  - 'elasticloadbalancing:RegisterTargets'
+                Resource: '*'
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Ref ECSClusterName
+      CapacityProviders: 
+        - FARGATE
+        - FARGATE_SPOT
+      ClusterSettings: 
+        - Name: containerInsights
+          Value: enabled
+
+  ECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      ContainerDefinitions: 
+        - Essential: true
+          Image: amazon/amazon-ecs-sample # placeholder container image
+          LogConfiguration: 
+            LogDriver: awslogs
+            Options: 
+              awslogs-create-group: true
+              awslogs-group: !Sub "/ecs/${AppName}-task-definition-family"
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+          Name: !Ref AppName
+          PortMappings: 
+            - ContainerPort: 80
+              HostPort: 80
+              Protocol: "tcp"
+      Family: !Sub "${AppName}-task-definition-family"
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      NetworkMode: "awsvpc"
+      RequiresCompatibilities: 
+        - FARGATE
+      Cpu: 1024
+      Memory: 3072
+
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [ecs-tasks.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      MaxSessionDuration: 3600
+      Policies:
+        - PolicyName: AmazonECSTaskExecutionRolePolicy
+          PolicyDocument:
+            Statement:
+            - Effect: Allow
+              Action:
+                # Allow the ECS Tasks to download images from ECR
+                - 'ecr:GetAuthorizationToken'
+                - 'ecr:BatchCheckLayerAvailability'
+                - 'ecr:GetDownloadUrlForLayer'
+                - 'ecr:BatchGetImage'
+                # Allow the ECS tasks to upload logs to CloudWatch
+                - 'logs:CreateLogGroup'
+                - 'logs:CreateLogStream'                
+                - 'logs:PutLogEvents'
+              Resource: '*'
+
+  ECSService:
+    Type: AWS::ECS::Service
+    DependsOn: 
+      - PublicLoadBalancer
+    Properties:
+      ServiceName: !Sub "${AppName}-service"
+      Cluster: !GetAtt ECSCluster.Arn
+      LoadBalancers: 
+        - TargetGroupArn: !Ref LoadBalancerTargetGroup
+          ContainerName: !Ref AppName
+          ContainerPort: 80
+      LaunchType: FARGATE
+      DesiredCount: 1
+      PlatformVersion: LATEST
+      TaskDefinition: !Ref ECSTaskDefinition
+      DeploymentConfiguration: 
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+        DeploymentCircuitBreaker: 
+          Enable: true
+          Rollback: true
+      HealthCheckGracePeriodSeconds: 0
+      NetworkConfiguration: 
+        AwsvpcConfiguration: 
+          AssignPublicIp: ENABLED
+          SecurityGroups: 
+            - !Ref ECSSecurityGroup
+          Subnets: 
+            - Fn::ImportValue:
+                !Sub "${VPCStackName}-PublicSubnet1ID"
+            - Fn::ImportValue:
+                !Sub "${VPCStackName}-PublicSubnet2ID"
+            - Fn::ImportValue:
+                !Sub "${VPCStackName}-PublicSubnet3ID"
+
+Outputs:
+  ECSCluster:
+    Description: "ECR Cluster Name"
+    Value: !Ref ECSCluster
+    
+  ECSService:
+    Description: "ECR Service Name"
+    Value: !GetAtt ECSService.Name  

@@ -1,0 +1,116 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Bootstrap OIDC and VPC infrastructure (minimal)
+Parameters:
+  GitHubOrganization:
+    Type: String
+    Description: This is the root organization or personal account where repos are stored (Case Sensitive)
+  RepositoryName:
+    Type: String
+    Description: The repo(s) these roles will have access to. (Use * for all org or personal repos)
+    Default: "*"
+  BranchName:
+    Type: String
+    Description: Name of the git branch to to trust. (Use * for all branches)
+    Default: "*"
+  RoleName:
+    Type: String
+    Description: Name the Role
+  UseExistingProvider:
+    Type: String
+    Description: "Only one GitHub Provider can exists. Choose yes if one is already present in account"
+    Default: "no"
+    AllowedValues:
+      - "yes"
+      - "no"
+  AvailabilityZones:
+    Description:
+      List of Availability Zones to use for the subnets in the VPC. Three Availability Zones are used for this deployment, and the logical order of your selections is preserved.
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+  ECRRepositoryName:
+    Type: String
+    Description: Name of the ECR repository to be created
+
+Conditions:
+  CreateProvider: !Equals ["no", !Ref UseExistingProvider]
+
+Resources:
+  IdpGitHubOidc:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+        - !Sub https://github.com/${GitHubOrganization}/${RepositoryName}
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+      Tags:
+        - Key: Name
+          Value: !Sub ${RoleName}-OIDC-Provider
+
+  RoleGithubActions:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRoleWithWebIdentity
+            Principal:
+              Federated: !If
+                - CreateProvider
+                - !Ref IdpGitHubOidc
+                - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+            Condition:
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOrganization}/${RepositoryName}:*:${BranchName}
+      ManagedPolicyArns:
+        ## edit the managed policy to give least privileges
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/AdministratorAccess
+
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties: 
+      EncryptionConfiguration: 
+        EncryptionType: AES256
+      ImageScanningConfiguration: 
+        ScanOnPush: true
+      RepositoryName: !Ref ECRRepositoryName
+
+  VPCStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: 'https://aws-quickstart.s3.amazonaws.com/quickstart-aws-vpc/templates/aws-vpc.template.yaml'
+      Parameters:
+        AvailabilityZones: !Join [",", !Ref AvailabilityZones]
+        NumberOfAZs: 3
+        VPCCIDR: 10.0.0.0/16
+        PrivateSubnet1ACIDR: 10.0.0.0/19
+        PrivateSubnet2ACIDR: 10.0.32.0/19
+        PrivateSubnet3ACIDR:  10.0.64.0/19
+        PublicSubnet1CIDR: 10.0.128.0/20
+        PublicSubnet2CIDR: 10.0.144.0/20
+        PublicSubnet3CIDR: 10.0.160.0/20
+
+Outputs:
+  IdpGitHubOidc:
+    Condition: CreateProvider
+    Description: "ARN of Github OIDC Provider"
+    Value: !GetAtt IdpGitHubOidc.Arn
+
+  RoleGithubActionsARN:
+    Description: "CICD Role for GitHub Actions"
+    Value: !GetAtt RoleGithubActions.Arn
+
+  VPCStackName:
+    Description: "VPC Stack Name for import"
+    Value: !Select [1, !Split ["/", !Ref VPCStack]]
+
+  ECRRepositoryName:
+    Description: "ECR Repository Name"
+    Value: !Ref ECRRepository
+  
+  AWSRegion:
+    Description: "AWS Region for stack deployment"
+    Value: !Ref AWS::Region
