@@ -51,7 +51,7 @@ Resources:
       HealthyThresholdCount: 2
       TargetType: ip
       Name: !Ref AppName
-      Port: 8080
+      Port: 80
       Protocol: HTTP
       UnhealthyThresholdCount: 2
       VpcId: 
@@ -159,6 +159,9 @@ Resources:
       ContainerDefinitions: 
         - Essential: true
           Image: amazon/amazon-ecs-sample # placeholder container image
+          Environment:
+            - Name: PORT
+              Value: 80
           LogConfiguration: 
             LogDriver: awslogs
             Options: 
@@ -168,7 +171,7 @@ Resources:
               awslogs-stream-prefix: ecs
           Name: !Ref AppName
           PortMappings: 
-            - ContainerPort: 8080
+            - ContainerPort: 80
               Protocol: "tcp"
       Family: !Sub "${AppName}-task-definition-family"
       ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
@@ -215,7 +218,7 @@ Resources:
       LoadBalancers: 
         - TargetGroupArn: !Ref LoadBalancerTargetGroup
           ContainerName: !Ref AppName
-          ContainerPort: 8080
+          ContainerPort: 80
       LaunchType: FARGATE
       DesiredCount: 1
       PlatformVersion: LATEST
