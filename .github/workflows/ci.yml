@@ -74,11 +74,11 @@ jobs:
 
       # Checkout Amplify Repo
       - name: Checkout Amplify Repo
-        uses: actions/checkout@v3
-        with:
-          repository: ProgramEquity/amplify
-          ref: 'main'
-          path: app
+        run: |
+          cd $GITHUB_WORKSPACE
+          git clone https://github.com/ProgramEquity/amplify app
+          ls -l $GITHUB_WORKSPACE/app
+
 
       - name: Build, tag, and push image to AWS ECR
         id: build-image
@@ -89,7 +89,7 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           echo "Building image $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-          cd app
+          cd $GITHUB_WORKSPACE/app
           docker build \
               -t $ECR_REPOSITORY:latest \
               -t $ECR_REGISTRY/$ECR_REPOSITORY:latest \

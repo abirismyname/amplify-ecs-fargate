@@ -23,12 +23,12 @@ ECS_CLUSTER_NAME=<enter the ECS cluster name>
 
 Bootstrap the AWS account using the following command
 ```
-aws cloudformation deploy --template-file ./templates/bootstrap-minimal.yaml --stack-name bootstrap --parameter-overrides GitHubOrganization=$GITHUB_ORG RepositoryName=$GITHUB_REPO RoleName=$ROLE_NAME ECRRepositoryName=$ECR_REPO AvailabilityZones=$AVAILABILITY_ZONES ECSClusterName=$ECS_CLUSTER_NAME --region $AWS_REGION --capabilities CAPABILITY_NAMED_IAM
+aws cloudformation deploy --template-file ./templates/bootstrap-minimal.yaml --stack-name amplify-bootstrap --parameter-overrides GitHubOrganization=$GITHUB_ORG RepositoryName=$GITHUB_REPO RoleName=$ROLE_NAME ECRRepositoryName=$ECR_REPO AvailabilityZones=$AVAILABILITY_ZONES ECSClusterName=$ECS_CLUSTER_NAME --region $AWS_REGION --capabilities CAPABILITY_NAMED_IAM
 ```
 
 Get the stacks outputs using the following command
 ```
-aws cloudformation describe-stacks --stack-name bootstrap --region us-east-1 | jq ".Stacks[0].Outputs[]"
+aws cloudformation describe-stacks --stack-name amplify-bootstrap --region us-east-1 | jq ".Stacks[0].Outputs[]"
 ```
 Example output
 ```json
@@ -68,7 +68,7 @@ Vars:
 * `AWS_REGION` = the output value of 'AWSRegion' from CloudFormation output
 * `ECR_REPO_NAME` =  the output value of `ECRRepositoryName` from CloudFormation output
 * `VPC_STACK_NAME` =  the output value of `VPCStackName` from CloudFormation output
-* `ECS_CLUSTER_NANE` =  enter name of ECS cluster to be created
+* `ECS_CLUSTER_NAME` =  enter name of ECS cluster to be created
 * `APP_NAME` = enter name of the app to be shown in ECS cluster
 
 ## Test
