@@ -17,6 +17,8 @@ jobs:
     permissions:
       id-token: write # need this for OIDC
       contents: read
+      actions: read
+      security-events: write      
     uses: ./.github/workflows/ci.yml
     secrets: inherit
 
