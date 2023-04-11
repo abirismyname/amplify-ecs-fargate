@@ -8,6 +8,8 @@ name: build-and-deploy
 
 permissions:
   contents: read
+  actions: read
+  security-events: write
   
 jobs:
 
