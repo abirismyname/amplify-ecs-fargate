@@ -32,16 +32,16 @@ jobs:
         with:
           input_path: templates
           extra_args: -o sarif
-          output_path: ${GITHUB_WORKSPACE}/cfn_nag.sarif
+          output_path: cfn_nag.sarif
 
       - name: Check for cfn_nag scan failures
         id: catcfn        
         run: |
-          cat ${GITHUB_WORKSPACE}/cfn_nag.sarif
+          cat cfn_nag.sarif
 
       - uses: github/codeql-action/upload-sarif@v2
         with:
-          sarif_file: ${GITHUB_WORKSPACE}/cfn_nag.sarif   
+          sarif_file: cfn_nag.sarif   
           
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
