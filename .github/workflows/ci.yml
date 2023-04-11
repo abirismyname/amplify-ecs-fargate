@@ -15,6 +15,8 @@ jobs:
     permissions:
       id-token: write # need this for OIDC
       contents: read
+      actions: read
+      security-events: write      
     environment: ${{ github.ref_name }} # need this to fetch variables and secrets
     outputs:
       image-tag: ${{ steps.set-image-tag.outputs.IMAGE_TAG }} 
@@ -33,12 +35,7 @@ jobs:
           input_path: templates
           extra_args: -o sarif
           output_path: cfn_nag.sarif
-
-      - name: Check for cfn_nag scan failures
-        id: catcfn        
-        run: |
-          cat cfn_nag.sarif
-
+          
       - uses: github/codeql-action/upload-sarif@v2
         with:
           sarif_file: cfn_nag.sarif   
