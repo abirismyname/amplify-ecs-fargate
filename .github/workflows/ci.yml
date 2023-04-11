@@ -25,6 +25,19 @@ jobs:
         with:
           fetch-depth: 0
 
+      # cloudformation static analysis
+      - name: Cfn Nag
+        id: cfn-nag
+        uses: stelligent/cfn_nag@master
+        with:
+          input_path: templates
+          extra_args: -o sarif
+          output_path: cfn_nag.sarif
+
+      - uses: github/codeql-action/upload-sarif@v1
+        with:
+          sarif_file: cfn_nag.sarif   
+          
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
@@ -41,19 +54,7 @@ jobs:
         run: |
           shopt -s globstar # enable globbing
           cfn-lint --version
-          cfn-lint -t ./templates/*.yaml
-
-      # cloudformation static analysis
-      - name: Cfn Nag
-        id: cfn-nag
-        uses: stelligent/cfn_nag@master
-        with:
-          input_path: templates
-          extra_args: -o sarif
-          output_path: cfn_nag.sarif
-      - uses: github/codeql-action/upload-sarif@v1
-        with:
-          sarif_file: cfn_nag.sarif          
+          cfn-lint -t ./templates/*.yaml        
 
       # sum cfn_nag failures and return it as exit code
       - name: Check for cfn_nag scan failures
