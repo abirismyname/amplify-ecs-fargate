@@ -26,19 +26,6 @@ jobs:
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
-
-      # cloudformation static analysis
-      - name: Cfn Nag
-        id: cfn-nag
-        uses: stelligent/cfn_nag@master
-        with:
-          input_path: templates
-          extra_args: -o sarif
-          output_path: cfn_nag.sarif
-          
-      - uses: github/codeql-action/upload-sarif@v2
-        with:
-          sarif_file: cfn_nag.sarif   
           
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -58,11 +45,18 @@ jobs:
           cfn-lint --version
           cfn-lint -t ./templates/*.yaml        
 
-      # sum cfn_nag failures and return it as exit code
-      - name: Check for cfn_nag scan failures
-        id: cfn-nag-check-failure        
-        run: |
-          exit `grep Failures cfn_nag.out | awk '{ SUM += $3} END { print SUM }'`
+      # cloudformation static analysis
+      - name: Cfn Nag
+        id: cfn-nag
+        uses: stelligent/cfn_nag@master
+        with:
+          input_path: templates
+          extra_args: -o sarif
+          output_path: cfn_nag.sarif
+          
+      - uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: cfn_nag.sarif   
 
       # Build images
       - name: Login to Amazon ECR
@@ -127,9 +121,6 @@ jobs:
           echo "${{ steps.image-scan.outputs.informational }} Info" >> $GITHUB_STEP_SUMMARY
           echo "${{ steps.image-scan.outputs.undefined }} Undefined" >> $GITHUB_STEP_SUMMARY
           echo "${{ steps.image-scan.outputs.total }} Total" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY # this is a blank line
-          echo "## Cfn_Nag Summary:" >> $GITHUB_STEP_SUMMARY
-          cat cfn_nag.out | grep 'Failures\|templates' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY # this is a blank line
           echo "## ECR Container Image:" >> $GITHUB_STEP_SUMMARY
           echo "image-tag: ${{ steps.set-image-tag.outputs.IMAGE_TAG }}" >> $GITHUB_STEP_SUMMARY
