@@ -1,4 +1,4 @@
-# weather-ecs-fargate-react-app
+# amplify-ecs-fargate
 
 ## Join the Event Engine
 
